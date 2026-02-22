@@ -165,6 +165,10 @@ export async function create(): Promise<FileSystemService> {
     return adapter.getSyncHandle(fileId);
   }
 
+  async function shutdown(): Promise<void> {
+    await adapter.shutdown();
+  }
+
   return {
     getItems,
     createFile,
@@ -174,5 +178,6 @@ export async function create(): Promise<FileSystemService> {
     deleteItem,
     writeFileSync,
     getSyncHandle,
+    shutdown,
   };
 }

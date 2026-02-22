@@ -15,15 +15,11 @@ export type WorkerMessageType =
   (typeof WorkerMessage)[keyof typeof WorkerMessage];
 
 export type WorkerResponseTypeMap = {
-  [WorkerMessage.BOOT]: undefined;
-  [WorkerMessage.WRITE_FILE]: { path: string; content: string };
-  [WorkerMessage.GET_ITEMS]: { folderId: string };
   [WorkerMessage.ITEMS]: { items: FileSystemItem[]; folderId: string };
   [WorkerMessage.ERROR]: { message: string; requestType: WorkerMessageType };
   [WorkerMessage.READY]: undefined;
-
-  [WorkerMessage.SUCCESS]: { path: string };
   [WorkerMessage.SHUTDOWN]: undefined;
+  [WorkerMessage.SUCCESS]: { path: string };
 };
 
 export type WorkerRequestTypeMap = {
@@ -34,16 +30,18 @@ export type WorkerRequestTypeMap = {
 };
 
 export type WorkerResponseType<T extends WorkerMessageType> =
-  WorkerResponseTypeMap[T];
+  WorkerResponseTypeMap[Extract<T, keyof WorkerResponseTypeMap>];
 export type WorkerRequestType<T extends WorkerMessageType> =
   WorkerRequestTypeMap[Extract<T, keyof WorkerRequestTypeMap>];
 
 export type WorkerResponse<T extends WorkerMessageType> = {
   type: T;
-  payload: WorkerResponseType<T>;
-};
+} & (WorkerResponseType<T> extends undefined
+  ? {}
+  : { payload: WorkerResponseType<T> });
 
 export type WorkerRequest<T extends WorkerMessageType> = {
   type: T;
-  payload: WorkerRequestType<T>;
-};
+} & (WorkerRequestType<T> extends undefined
+  ? {}
+  : { payload: WorkerRequestType<T> });

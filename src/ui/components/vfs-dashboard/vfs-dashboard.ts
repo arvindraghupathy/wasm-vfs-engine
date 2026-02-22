@@ -1,13 +1,20 @@
 import { LitElement, html } from "lit";
 import { styles } from "./vfs-dashboard.css.ts";
 import { customElement, state } from "lit/decorators.js";
+import {
+  WorkerMessage,
+  type WorkerMessageType,
+  type WorkerResponse,
+  type WorkerResponseType,
+} from "../../../engine/workerTypes.ts";
+import type { FileSystemItem } from "../../../engine/fileSystemService/FileSystemService.ts";
 
 @customElement("vfs-dashboard")
 export class VfsDashboard extends LitElement {
   static styles = styles;
 
   @state() private status = "Offline";
-  @state() private files: any[] = [];
+  @state() private files: FileSystemItem[] = [];
   @state() private isProcessing = false;
 
   private worker!: Worker;
@@ -20,27 +27,42 @@ export class VfsDashboard extends LitElement {
     );
 
     this.worker.onmessage = (e) => {
-      const { type, path, items, message, requestType } = e.data;
+      const { type, payload } = e.data as WorkerResponse<WorkerMessageType>;
 
-      if (type === "READY") {
+      if (type === WorkerMessage.READY) {
         this.status = "Engine Online";
         this._refreshFileList();
       }
 
-      if (type === "SUCCESS") {
+      if (type === WorkerMessage.SUCCESS) {
+        const { path } = payload as WorkerResponseType<
+          typeof WorkerMessage.SUCCESS
+        >;
         this.isProcessing = false;
         console.log(`File created via WASM: ${path}`);
         this._refreshFileList();
       }
 
-      if (type === "ITEMS") {
+      if (type === WorkerMessage.ITEMS) {
+        const { items } = payload as WorkerResponseType<
+          typeof WorkerMessage.ITEMS
+        >;
         this.files = items;
       }
 
-      if (type === "ERROR") {
+      if (type === WorkerMessage.ERROR) {
+        const { message, requestType } = payload as WorkerResponseType<
+          typeof WorkerMessage.ERROR
+        >;
         this.isProcessing = false;
         this.status = "Error";
         console.error(`[Worker ${requestType}] ${message}`);
+      }
+
+      if (type === WorkerMessage.SHUTDOWN) {
+        this.status = "Offline";
+        this.files = [];
+        this.isProcessing = false;
       }
     };
   }
@@ -95,7 +117,7 @@ export class VfsDashboard extends LitElement {
 
   private _boot() {
     this.status = "Initializing...";
-    this.worker.postMessage({ type: "BOOT" });
+    this.worker.postMessage({ type: WorkerMessage.BOOT });
   }
 
   private _testWrite() {
@@ -103,7 +125,7 @@ export class VfsDashboard extends LitElement {
     const fileName = `wasm_log_${Date.now()}.txt`;
 
     this.worker.postMessage({
-      type: "WRITE_FILE",
+      type: WorkerMessage.WRITE_FILE,
       payload: {
         path: fileName,
         content: `Generated at ${new Date().toISOString()} via WASM engine.`,
@@ -113,7 +135,7 @@ export class VfsDashboard extends LitElement {
 
   private _refreshFileList() {
     this.worker.postMessage({
-      type: "GET_ITEMS",
+      type: WorkerMessage.GET_ITEMS,
       payload: { folderId: "root" },
     });
   }

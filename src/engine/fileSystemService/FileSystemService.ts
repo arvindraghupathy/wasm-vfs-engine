@@ -53,4 +53,5 @@ export interface FileSystemService {
   deleteItem(id: FileSystemItemId): Promise<void>;
   getSyncHandle(fileId: FileSystemFileId): Promise<FileSystemSyncAccessHandle>;
   writeFileSync(id: FileSystemFileId, content: Uint8Array): void;
+  shutdown(): Promise<void>;
 }

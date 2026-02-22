@@ -5,6 +5,7 @@ import ModuleInit from "./guest.js";
 import {
   WorkerMessage,
   type WorkerMessageType,
+  type WorkerRequest,
   type WorkerRequestType,
 } from "./workerTypes.ts";
 
@@ -22,10 +23,19 @@ class WorkerMessageHandler {
 
   startListening() {
     self.onmessage = async (e) => {
-      const { type, payload } = e.data ?? {};
-      const handler = this.handlers?.[type as WorkerMessageType];
+      const { type, payload } = e.data as WorkerRequest<WorkerMessageType>;
+      const handler = this.handlers?.[type];
       if (handler) {
-        await handler(payload);
+        try {
+          await handler(payload);
+        } catch (error) {
+          if (error instanceof Error) {
+            self.postMessage({
+              type: WorkerMessage.ERROR,
+              payload: { message: error.message, requestType: type },
+            });
+          }
+        }
       }
     };
   }
@@ -68,7 +78,7 @@ class WorkerMessageHandler {
 
     await this.service.getSyncHandle(path);
     this.wasmModule.VFSManager.writeFile(path, content);
-    self.postMessage({ type: WorkerMessage.SUCCESS, path });
+    self.postMessage({ type: WorkerMessage.SUCCESS, payload: { path } });
   }
 
   async handleGetItems(
@@ -79,10 +89,14 @@ class WorkerMessageHandler {
     }
     const folderId = payload?.folderId ?? "root";
     const items = await this.service.getItems(folderId);
-    self.postMessage({ type: WorkerMessage.ITEMS, folderId, items });
+    self.postMessage({
+      type: WorkerMessage.ITEMS,
+      payload: { folderId, items },
+    });
   }
 
   async handleShutdown() {
+    await this.service?.shutdown();
     this.service = undefined;
     this.wasmModule = undefined;
     self.postMessage({ type: WorkerMessage.SHUTDOWN });

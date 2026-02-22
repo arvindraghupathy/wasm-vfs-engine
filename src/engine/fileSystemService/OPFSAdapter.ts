@@ -367,6 +367,14 @@ export class OPFSAdapter {
     return offset;
   }
 
+  async shutdown(): Promise<void> {
+    for (const handle of this.syncHandles.values()) {
+      handle.close();
+    }
+    this.syncHandles.clear();
+    this.root = null;
+  }
+
   /**
    * Updates metadata for a file after a sync write.
    * This is triggered in the background to avoid blocking the WASM engine.
