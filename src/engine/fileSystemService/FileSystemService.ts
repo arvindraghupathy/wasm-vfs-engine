@@ -33,11 +33,10 @@ export type FileSystemError = {
 
 export interface FileSystemService {
   getItems(id: FileSystemFolderId | null): Promise<FileSystemItem[]>;
-  getSyncHandle(fileId: FileSystemFileId): Promise<FileSystemSyncAccessHandle>;
-  createFolderSync(parentId: FileSystemFolderId | null, name: string): void;
-  deleteFolderSync(id: FileSystemFolderId): void;
-  readFileSync(id: FileSystemFileId): Uint8Array;
-  writeFileSync(id: FileSystemFileId, content: Uint8Array): void;
-  deleteFileSync(id: FileSystemFileId): void;
+  readFile(id: FileSystemFileId): Promise<Uint8Array>;
+  writeFile(id: FileSystemFileId, content: Uint8Array): Promise<void>;
+  createFolder(path: FileSystemFolderId): Promise<void>;
+  deleteFile(id: FileSystemFileId): Promise<void>;
+  deleteFolder(id: FileSystemFolderId): Promise<void>;
   shutdown(): Promise<void>;
 }

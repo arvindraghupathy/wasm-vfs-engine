@@ -350,11 +350,11 @@ var wasmBinaryFile;
 function findWasmBinary() {
 
   if (Module['locateFile']) {
-    return locateFile('guest.wasm');
+    return locateFile('VFSManager.wasm');
   }
 
   // Use bundler-friendly `new URL(..., import.meta.url)` pattern; works in browsers too.
-  return new URL('guest.wasm', import.meta.url).href;
+  return new URL('VFSManager.wasm', import.meta.url).href;
 
 }
 

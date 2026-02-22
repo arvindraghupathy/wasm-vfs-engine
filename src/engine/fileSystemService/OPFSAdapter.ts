@@ -52,7 +52,8 @@ export class OPFSAdapter {
    * Get directory handle by path
    */
   private async getDirectoryHandle(
-    folderId: FileSystemFolderId
+    folderId: FileSystemFolderId,
+    create = false
   ): Promise<FileSystemDirectoryHandle> {
     const root = this.getRoot();
     if (!folderId || folderId === "root") {
@@ -62,7 +63,7 @@ export class OPFSAdapter {
     const segments = folderId.split("/");
     let current = root;
     for (const segment of segments) {
-      current = await current.getDirectoryHandle(segment);
+      current = await current.getDirectoryHandle(segment, { create });
     }
     return current;
   }
@@ -167,7 +168,7 @@ export class OPFSAdapter {
     const fileName = segments.pop()!;
     const folderId = segments.join("/") || "root";
 
-    const dir = await this.getDirectoryHandle(folderId);
+    const dir = await this.getDirectoryHandle(folderId, true);
 
     // Write the file
     const fileHandle = await dir.getFileHandle(fileName, { create: true });
@@ -229,7 +230,7 @@ export class OPFSAdapter {
       throw new Error("Invalid folder name");
     }
 
-    const parentDir = await this.getDirectoryHandle(parentId);
+    const parentDir = await this.getDirectoryHandle(parentId, true);
     const folderName = this.sanitizeName(folder.name);
     const folderId =
       parentId === "root" ? folderName : `${parentId}/${folderName}`;
@@ -324,18 +325,6 @@ export class OPFSAdapter {
     }
   }
 
-  /**
-   * Move an item to a different directory
-   */
-  async moveItem(
-    _itemId: FileSystemItemId,
-    _newParentId: FileSystemFolderId
-  ): Promise<void> {
-    // OPFS doesn't have native move operation
-    // Would need to implement copy + delete
-    throw new Error("Move operation not yet implemented");
-  }
-
   async getSyncHandle(fileId: string): Promise<FileSystemSyncAccessHandle> {
     if (this.syncHandles.has(fileId)) return this.syncHandles.get(fileId)!;
 
@@ -343,7 +332,7 @@ export class OPFSAdapter {
     const fileName = segments.pop()!;
     const folderId = segments.join("/") || "root";
 
-    const dir = await this.getDirectoryHandle(folderId);
+    const dir = await this.getDirectoryHandle(folderId, true);
     const fileHandle = await dir.getFileHandle(fileName, { create: true });
 
     const accessHandle = await fileHandle.createSyncAccessHandle();
@@ -449,7 +438,7 @@ export class OPFSAdapter {
     parentId: string,
     fileName: string
   ): Promise<string> {
-    const dir = await this.getDirectoryHandle(parentId);
+    const dir = await this.getDirectoryHandle(parentId, true);
     // Ensure file exists and get handle
     await dir.getFileHandle(fileName, { create: true });
 
@@ -457,6 +446,13 @@ export class OPFSAdapter {
     await this.getSyncHandle(fileId); // Pre-cache the sync access handle
 
     return fileId;
+  }
+
+  async createDirectoryPath(folderId: string): Promise<void> {
+    if (!folderId || folderId === "root") {
+      return;
+    }
+    await this.getDirectoryHandle(folderId, true);
   }
 
   /**

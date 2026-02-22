@@ -1,7 +1,7 @@
 import { create as createFileSystem } from "./fileSystemService/FileSystemFactory.ts";
 import type { FileSystemService } from "./fileSystemService/FileSystemService.ts";
 // @ts-ignore
-import ModuleInit from "./guest.js";
+import ModuleInit from "./VFSManager.js";
 import {
   WorkerMessage,
   type WorkerMessageType,
@@ -9,12 +9,30 @@ import {
   type WorkerRequestType,
 } from "./workerTypes.ts";
 
+const DirtyKind = {
+  UPSERT_FILE: 1,
+  DELETE_FILE: 2,
+  CREATE_FOLDER: 3,
+  DELETE_FOLDER: 4,
+} as const;
+
+type DirtyEntry = {
+  path: string;
+  kind: number;
+};
+
 class WorkerMessageHandler {
+  private readonly wasmStorageMemoryLimitBytes = 64 * 1024 * 1024; // 64 MiB
   private service?: FileSystemService;
   private wasmModule?: any;
   private handlers?: Partial<
     Record<WorkerMessageType, (payload: unknown) => Promise<void>>
   >;
+  private flushTimer?: number;
+  private isFlushing = false;
+  private flushPending = false;
+  private readonly flushDebounceMs = 150;
+  private readonly flushRetryMs = 500;
 
   start() {
     this.registerHandlers();
@@ -73,8 +91,14 @@ class WorkerMessageHandler {
   async handleBoot() {
     this.service = await createFileSystem();
     this.wasmModule = await ModuleInit({
-      locateFile: (p: string) => (p.endsWith(".wasm") ? "/wasm/guest.wasm" : p),
+      locateFile: (p: string) =>
+        p.endsWith(".wasm") ? "/wasm/VFSManager.wasm" : p,
     });
+    this.wasmModule.VFSManager.setMemoryLimitBytes(
+      this.wasmStorageMemoryLimitBytes
+    );
+    this.wasmModule.VFSManager.resetState();
+    await this.hydrateFromPersistence();
 
     (self as any).vfsService = this.service;
     self.postMessage({ type: WorkerMessage.READY });
@@ -92,12 +116,14 @@ class WorkerMessageHandler {
       throw new Error("Missing file path");
     }
 
-    await this.service.getSyncHandle(path);
     this.wasmModule.VFSManager.writeFile(path, content);
+    this.scheduleFlush();
     self.postMessage({ type: WorkerMessage.SUCCESS, payload: { path } });
   }
 
-  async handleReadFile(payload: WorkerRequestType<typeof WorkerMessage.READ_FILE>) {
+  async handleReadFile(
+    payload: WorkerRequestType<typeof WorkerMessage.READ_FILE>
+  ) {
     if (!this.service || !this.wasmModule) {
       throw new Error("Engine not initialized");
     }
@@ -107,19 +133,8 @@ class WorkerMessageHandler {
       throw new Error("Missing file path");
     }
 
-    await this.service.getSyncHandle(path);
-
     const raw = this.wasmModule.VFSManager.readFile(path);
-    let bytes: Uint8Array;
-    if (raw instanceof Uint8Array) {
-      bytes = raw;
-    } else if (raw instanceof ArrayBuffer) {
-      bytes = new Uint8Array(raw);
-    } else if (ArrayBuffer.isView(raw)) {
-      bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
-    } else {
-      bytes = new Uint8Array();
-    }
+    const bytes = this.toUint8Array(raw);
 
     const decoder = new TextDecoder("utf-8");
     const content = decoder.decode(bytes);
@@ -158,9 +173,13 @@ class WorkerMessageHandler {
     }
 
     this.wasmModule.VFSManager.createFolder(parentPath, folderName);
+    this.scheduleFlush();
     const createdPath =
       parentPath === "root" ? folderName : `${parentPath}/${folderName}`;
-    self.postMessage({ type: WorkerMessage.SUCCESS, payload: { path: createdPath } });
+    self.postMessage({
+      type: WorkerMessage.SUCCESS,
+      payload: { path: createdPath },
+    });
   }
 
   async handleDeleteFile(
@@ -176,6 +195,7 @@ class WorkerMessageHandler {
     }
 
     this.wasmModule.VFSManager.deleteFile(path);
+    this.scheduleFlush();
     self.postMessage({ type: WorkerMessage.SUCCESS, payload: { path } });
   }
 
@@ -192,14 +212,179 @@ class WorkerMessageHandler {
     }
 
     this.wasmModule.VFSManager.deleteFolder(path);
+    this.scheduleFlush();
     self.postMessage({ type: WorkerMessage.SUCCESS, payload: { path } });
   }
 
   async handleShutdown() {
+    if (this.flushTimer !== undefined) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
+    }
+    await this.flushDirtyPaths(false);
     await this.service?.shutdown();
     this.service = undefined;
     this.wasmModule = undefined;
     self.postMessage({ type: WorkerMessage.SHUTDOWN });
+  }
+
+  private async hydrateFromPersistence() {
+    if (!this.service || !this.wasmModule) {
+      return;
+    }
+    await this.hydrateFolder("root");
+  }
+
+  private async hydrateFolder(folderId: string): Promise<void> {
+    if (!this.service || !this.wasmModule) {
+      return;
+    }
+
+    const items = await this.service.getItems(folderId);
+    for (const item of items) {
+      if (item.type === "directory") {
+        this.wasmModule.VFSManager.hydrateFolder(item.id);
+        await this.hydrateFolder(item.id);
+      } else {
+        const bytes = await this.service.readFile(item.id);
+        this.wasmModule.VFSManager.hydrateFile(item.id, bytes);
+      }
+    }
+  }
+
+  private scheduleFlush(delayMs = this.flushDebounceMs) {
+    if (this.flushTimer !== undefined) {
+      clearTimeout(this.flushTimer);
+    }
+
+    this.flushTimer = self.setTimeout(() => {
+      void this.flushDirtyPaths();
+    }, delayMs);
+  }
+
+  private async flushDirtyPaths(retryOnFailure = true): Promise<void> {
+    if (!this.service || !this.wasmModule) {
+      return;
+    }
+
+    if (this.isFlushing) {
+      this.flushPending = true;
+      return;
+    }
+
+    this.isFlushing = true;
+    let hasFailure = false;
+    try {
+      const entries = this.getDirtyEntries().sort((a, b) =>
+        this.compareDirtyEntries(a, b)
+      );
+      for (const entry of entries) {
+        try {
+          await this.persistDirtyEntry(entry);
+          this.wasmModule.VFSManager.clearDirtyPath(entry.path);
+        } catch (error) {
+          hasFailure = true;
+          console.error(
+            "[Worker] Failed to persist dirty entry:",
+            entry,
+            error
+          );
+          break;
+        }
+      }
+    } finally {
+      this.isFlushing = false;
+    }
+
+    if (this.flushPending) {
+      this.flushPending = false;
+      this.scheduleFlush();
+      return;
+    }
+
+    if (hasFailure && retryOnFailure) {
+      this.scheduleFlush(this.flushRetryMs);
+    }
+  }
+
+  private compareDirtyEntries(a: DirtyEntry, b: DirtyEntry): number {
+    const kindOrder: Record<number, number> = {
+      [DirtyKind.CREATE_FOLDER]: 0,
+      [DirtyKind.UPSERT_FILE]: 1,
+      [DirtyKind.DELETE_FILE]: 2,
+      [DirtyKind.DELETE_FOLDER]: 3,
+    };
+
+    const kindDiff = (kindOrder[a.kind] ?? 99) - (kindOrder[b.kind] ?? 99);
+    if (kindDiff !== 0) {
+      return kindDiff;
+    }
+
+    const depthA = a.path.split("/").length;
+    const depthB = b.path.split("/").length;
+    if (a.kind === DirtyKind.CREATE_FOLDER) {
+      return depthA - depthB;
+    }
+    if (a.kind === DirtyKind.DELETE_FOLDER) {
+      return depthB - depthA;
+    }
+    return depthA - depthB;
+  }
+
+  private getDirtyEntries(): DirtyEntry[] {
+    const raw = this.wasmModule?.VFSManager.getDirtyEntries();
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+
+    return raw
+      .map((entry: any) => ({
+        path: String(entry?.path ?? ""),
+        kind: Number(entry?.kind ?? 0),
+      }))
+      .filter((entry: DirtyEntry) => entry.path.length > 0);
+  }
+
+  private async persistDirtyEntry(entry: DirtyEntry): Promise<void> {
+    if (!this.service || !this.wasmModule) {
+      return;
+    }
+
+    switch (entry.kind) {
+      case DirtyKind.UPSERT_FILE: {
+        const raw = this.wasmModule.VFSManager.readFile(entry.path);
+        const bytes = this.toUint8Array(raw);
+        await this.service.writeFile(entry.path, bytes);
+        return;
+      }
+      case DirtyKind.DELETE_FILE: {
+        await this.service.deleteFile(entry.path);
+        return;
+      }
+      case DirtyKind.CREATE_FOLDER: {
+        await this.service.createFolder(entry.path);
+        return;
+      }
+      case DirtyKind.DELETE_FOLDER: {
+        await this.service.deleteFolder(entry.path);
+        return;
+      }
+      default:
+        throw new Error(`Unsupported dirty entry kind: ${entry.kind}`);
+    }
+  }
+
+  private toUint8Array(raw: unknown): Uint8Array {
+    if (raw instanceof Uint8Array) {
+      return raw;
+    }
+    if (raw instanceof ArrayBuffer) {
+      return new Uint8Array(raw);
+    }
+    if (ArrayBuffer.isView(raw)) {
+      return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+    }
+    return new Uint8Array();
   }
 }
 

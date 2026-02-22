@@ -30,7 +30,10 @@ export type WorkerResponseTypeMap = {
 
 export type WorkerRequestTypeMap = {
   [WorkerMessage.BOOT]: undefined;
-  [WorkerMessage.WRITE_FILE]: { path: string; content: string };
+  [WorkerMessage.WRITE_FILE]: {
+    path: string;
+    content: string | Uint8Array | ArrayBuffer;
+  };
   [WorkerMessage.READ_FILE]: { path: string };
   [WorkerMessage.CREATE_FOLDER]: { parentPath?: string; folderName: string };
   [WorkerMessage.DELETE_FILE]: { path: string };
