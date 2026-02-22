@@ -3,11 +3,13 @@ import type { FileSystemItem } from "./fileSystemService/FileSystemService";
 export const WorkerMessage = {
   BOOT: "BOOT",
   WRITE_FILE: "WRITE_FILE",
+  READ_FILE: "READ_FILE",
   CREATE_FOLDER: "CREATE_FOLDER",
   DELETE_FILE: "DELETE_FILE",
   DELETE_FOLDER: "DELETE_FOLDER",
   GET_ITEMS: "GET_ITEMS",
   ITEMS: "ITEMS",
+  FILE_CONTENT: "FILE_CONTENT",
   ERROR: "ERROR",
   READY: "READY",
   SUCCESS: "SUCCESS",
@@ -19,6 +21,7 @@ export type WorkerMessageType =
 
 export type WorkerResponseTypeMap = {
   [WorkerMessage.ITEMS]: { items: FileSystemItem[]; folderId: string };
+  [WorkerMessage.FILE_CONTENT]: { path: string; content: string; size: number };
   [WorkerMessage.ERROR]: { message: string; requestType: WorkerMessageType };
   [WorkerMessage.READY]: undefined;
   [WorkerMessage.SHUTDOWN]: undefined;
@@ -28,6 +31,7 @@ export type WorkerResponseTypeMap = {
 export type WorkerRequestTypeMap = {
   [WorkerMessage.BOOT]: undefined;
   [WorkerMessage.WRITE_FILE]: { path: string; content: string };
+  [WorkerMessage.READ_FILE]: { path: string };
   [WorkerMessage.CREATE_FOLDER]: { parentPath?: string; folderName: string };
   [WorkerMessage.DELETE_FILE]: { path: string };
   [WorkerMessage.DELETE_FOLDER]: { path: string };

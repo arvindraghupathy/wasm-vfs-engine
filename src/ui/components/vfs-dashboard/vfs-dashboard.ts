@@ -18,6 +18,10 @@ export class VfsDashboard extends LitElement {
   @state() private isProcessing = false;
   @state() private createFilePath = "notes.txt";
   @state() private createFileContent = "";
+  @state() private readFilePath = "notes.txt";
+  @state() private readFileContent = "";
+  @state() private readFileSize = 0;
+  @state() private readFileResultPath = "";
   @state() private deleteFilePath = "";
   @state() private createFolderParent = "root";
   @state() private createFolderName = "";
@@ -47,6 +51,16 @@ export class VfsDashboard extends LitElement {
         this.isProcessing = false;
         console.log(`Operation succeeded: ${path}`);
         this._refreshFileList();
+      }
+
+      if (type === WorkerMessage.FILE_CONTENT) {
+        const { path, content, size } = payload as WorkerResponseType<
+          typeof WorkerMessage.FILE_CONTENT
+        >;
+        this.isProcessing = false;
+        this.readFileResultPath = path;
+        this.readFileContent = content;
+        this.readFileSize = size;
       }
 
       if (type === WorkerMessage.ITEMS) {
@@ -138,6 +152,22 @@ export class VfsDashboard extends LitElement {
           </section>
 
           <section class="action-card">
+            <h4>Read File</h4>
+            <input
+              .value=${this.readFilePath}
+              @input=${(e: Event) =>
+                (this.readFilePath = (e.target as HTMLInputElement).value)}
+              placeholder="file path to read"
+            />
+            <button
+              @click=${this._readFile}
+              ?disabled=${this.status === "Offline" || this.isProcessing}
+            >
+              Read File
+            </button>
+          </section>
+
+          <section class="action-card">
             <h4>Create Folder</h4>
             <input
               .value=${this.createFolderParent}
@@ -209,6 +239,17 @@ export class VfsDashboard extends LitElement {
             </section>
           </div>
         </div>
+
+        <div class="file-preview">
+          <h3>File Contents</h3>
+          <div class="preview-meta">
+            <span>Path: ${this.readFileResultPath || "-"}</span>
+            <span>Bytes: ${this.readFileSize}</span>
+          </div>
+          <pre class="preview-content"
+            >${this.readFileContent || "No file loaded."}</pre
+          >
+        </div>
       </div>
     `;
   }
@@ -239,6 +280,17 @@ export class VfsDashboard extends LitElement {
     this.isProcessing = true;
     this.worker.postMessage({
       type: WorkerMessage.DELETE_FILE,
+      payload: { path },
+    });
+  }
+
+  private _readFile() {
+    const path = this.readFilePath.trim();
+    if (!path) return;
+
+    this.isProcessing = true;
+    this.worker.postMessage({
+      type: WorkerMessage.READ_FILE,
       payload: { path },
     });
   }

@@ -46,6 +46,10 @@ class WorkerMessageHandler {
         this.handleWriteFile(
           payload as WorkerRequestType<typeof WorkerMessage.WRITE_FILE>
         ),
+      [WorkerMessage.READ_FILE]: async (payload) =>
+        this.handleReadFile(
+          payload as WorkerRequestType<typeof WorkerMessage.READ_FILE>
+        ),
       [WorkerMessage.CREATE_FOLDER]: async (payload) =>
         this.handleCreateFolder(
           payload as WorkerRequestType<typeof WorkerMessage.CREATE_FOLDER>
@@ -91,6 +95,39 @@ class WorkerMessageHandler {
     await this.service.getSyncHandle(path);
     this.wasmModule.VFSManager.writeFile(path, content);
     self.postMessage({ type: WorkerMessage.SUCCESS, payload: { path } });
+  }
+
+  async handleReadFile(payload: WorkerRequestType<typeof WorkerMessage.READ_FILE>) {
+    if (!this.service || !this.wasmModule) {
+      throw new Error("Engine not initialized");
+    }
+
+    const path = payload?.path?.trim();
+    if (!path) {
+      throw new Error("Missing file path");
+    }
+
+    await this.service.getSyncHandle(path);
+
+    const raw = this.wasmModule.VFSManager.readFile(path);
+    let bytes: Uint8Array;
+    if (raw instanceof Uint8Array) {
+      bytes = raw;
+    } else if (raw instanceof ArrayBuffer) {
+      bytes = new Uint8Array(raw);
+    } else if (ArrayBuffer.isView(raw)) {
+      bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+    } else {
+      bytes = new Uint8Array();
+    }
+
+    const decoder = new TextDecoder("utf-8");
+    const content = decoder.decode(bytes);
+
+    self.postMessage({
+      type: WorkerMessage.FILE_CONTENT,
+      payload: { path, content, size: bytes.byteLength },
+    });
   }
 
   async handleGetItems(

@@ -8,7 +8,7 @@ export const styles = css`
     padding: 1.5rem;
     border: 1px solid #ddd;
     border-radius: 12px;
-    max-width: 400px;
+    max-width: 960px;
     background: rgba(255, 255, 255, 0.1);
   }
   .status-bar {
@@ -80,6 +80,34 @@ export const styles = css`
   .file-list {
     border-top: 1px solid #eee;
     padding-top: 1rem;
+  }
+  .file-preview {
+    border-top: 1px solid #eee;
+    padding-top: 1rem;
+    margin-top: 1rem;
+  }
+  .preview-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+    color: white;
+    font-family: monospace;
+  }
+  .preview-content {
+    margin: 0;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 10px;
+    min-height: 120px;
+    max-height: 280px;
+    overflow: auto;
+    background: black;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: monospace;
+    font-size: 0.9rem;
   }
   .item-columns {
     display: grid;
