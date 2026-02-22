@@ -5,7 +5,7 @@ import type {
   FileSystemFolderId,
   FileSystemItem,
   FileSystemItemId,
-} from "./fileSystemService.ts";
+} from "./FileSystemService.ts";
 
 import { blobToHash } from "./utils.ts";
 
@@ -334,7 +334,7 @@ export class OPFSAdapter {
     throw new Error("Move operation not yet implemented");
   }
 
-  async getSyncHandle(fileId: string) {
+  async getSyncHandle(fileId: string): Promise<FileSystemSyncAccessHandle> {
     if (this.syncHandles.has(fileId)) return this.syncHandles.get(fileId);
 
     const segments = fileId.split("/");
@@ -353,9 +353,82 @@ export class OPFSAdapter {
     const handle = this.syncHandles.get(fileId);
     if (!handle) throw new Error("Handle not pre-opened for sync I/O");
 
-    const written = handle.write(data, { at: 0 });
+    let offset = 0;
+    while (offset < data.byteLength) {
+      const written = handle.write(data.subarray(offset), { at: offset });
+      if (written <= 0) {
+        throw new Error(`Failed to write sync data for ${fileId}`);
+      }
+      offset += written;
+    }
+
+    handle.truncate(data.byteLength);
     handle.flush();
-    return written;
+    return offset;
+  }
+
+  /**
+   * Updates metadata for a file after a sync write.
+   * This is triggered in the background to avoid blocking the WASM engine.
+   */
+  async updateMetadataAsync(
+    folderId: string,
+    fileName: string,
+    blob: Blob
+  ): Promise<void> {
+    try {
+      const dir = await this.getDirectoryHandle(folderId);
+
+      // Compute the new hash from the updated content
+      const mediaHash = await blobToHash(blob);
+
+      // Construct the metadata object
+      const metadata: FileMetadata = {
+        name: fileName,
+        mediaType: blob.type || "application/octet-stream",
+        mediaHash: mediaHash,
+      };
+
+      // Use your existing private writeMetadata method
+      await this.writeMetadata(dir, fileName, metadata);
+
+      console.log(`[OPFS] Metadata/Hash updated for ${fileName}`);
+    } catch (error) {
+      console.error(`[OPFS] Failed to update metadata for ${fileName}:`, error);
+    }
+  }
+
+  /**
+   * Synchronous read for WASM engine.
+   */
+  readSync(fileId: string): Uint8Array {
+    const handle = this.syncHandles.get(fileId);
+    if (!handle) throw new Error(`No sync handle open for ${fileId}`);
+
+    const size = handle.getSize();
+    const buffer = new Uint8Array(size);
+    handle.read(buffer, { at: 0 });
+    return buffer;
+  }
+
+  /**
+   * Note: Truly synchronous "creation" from scratch is impossible in OPFS
+   * because getFileHandle is async.
+   * * We handle this by having WASM request a "File Preparation"
+   * which the Worker resolves before WASM enters its sync loop.
+   */
+  async prepareNewFileSync(
+    parentId: string,
+    fileName: string
+  ): Promise<string> {
+    const dir = await this.getDirectoryHandle(parentId);
+    // Ensure file exists and get handle
+    await dir.getFileHandle(fileName, { create: true });
+
+    const fileId = parentId === "root" ? fileName : `${parentId}/${fileName}`;
+    await this.getSyncHandle(fileId); // Pre-cache the sync access handle
+
+    return fileId;
   }
 
   /**

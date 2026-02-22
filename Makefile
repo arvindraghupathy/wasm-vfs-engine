@@ -1,6 +1,6 @@
 all:
 	# Compile the C++ code to JS Glue + WASM
-	emcc -O3 --bind \
+	emcc -g -O3 --bind \
 		-s MODULARIZE=1 \
 		-s EXPORT_ES6=1 \
 		-s ALLOW_MEMORY_GROWTH=1 \

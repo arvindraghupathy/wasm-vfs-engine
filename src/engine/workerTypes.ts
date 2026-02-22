@@ -1,0 +1,49 @@
+import type { FileSystemItem } from "./fileSystemService/FileSystemService";
+
+export const WorkerMessage = {
+  BOOT: "BOOT",
+  WRITE_FILE: "WRITE_FILE",
+  GET_ITEMS: "GET_ITEMS",
+  ITEMS: "ITEMS",
+  ERROR: "ERROR",
+  READY: "READY",
+  SUCCESS: "SUCCESS",
+  SHUTDOWN: "SHUTDOWN",
+} as const;
+
+export type WorkerMessageType =
+  (typeof WorkerMessage)[keyof typeof WorkerMessage];
+
+export type WorkerResponseTypeMap = {
+  [WorkerMessage.BOOT]: undefined;
+  [WorkerMessage.WRITE_FILE]: { path: string; content: string };
+  [WorkerMessage.GET_ITEMS]: { folderId: string };
+  [WorkerMessage.ITEMS]: { items: FileSystemItem[]; folderId: string };
+  [WorkerMessage.ERROR]: { message: string; requestType: WorkerMessageType };
+  [WorkerMessage.READY]: undefined;
+
+  [WorkerMessage.SUCCESS]: { path: string };
+  [WorkerMessage.SHUTDOWN]: undefined;
+};
+
+export type WorkerRequestTypeMap = {
+  [WorkerMessage.BOOT]: undefined;
+  [WorkerMessage.WRITE_FILE]: { path: string; content: string };
+  [WorkerMessage.GET_ITEMS]: { folderId: string };
+  [WorkerMessage.SHUTDOWN]: undefined;
+};
+
+export type WorkerResponseType<T extends WorkerMessageType> =
+  WorkerResponseTypeMap[T];
+export type WorkerRequestType<T extends WorkerMessageType> =
+  WorkerRequestTypeMap[Extract<T, keyof WorkerRequestTypeMap>];
+
+export type WorkerResponse<T extends WorkerMessageType> = {
+  type: T;
+  payload: WorkerResponseType<T>;
+};
+
+export type WorkerRequest<T extends WorkerMessageType> = {
+  type: T;
+  payload: WorkerRequestType<T>;
+};

@@ -7,7 +7,7 @@ import type {
   FileSystemItem,
   FileSystemItemId,
   FileSystemService,
-} from "./fileSystemService";
+} from "./FileSystemService.ts";
 import { OPFSAdapter } from "./OPFSAdapter";
 
 /**
@@ -21,10 +21,8 @@ export async function create(): Promise<FileSystemService> {
   const adapter = new OPFSAdapter();
   await adapter.initialize();
 
-  // Cache for observable instances keyed by folder ID
   const systemCache = new Map<FileSystemFolderId, FileSystemItem[]>();
 
-  /** Normalize null to root folder id so adapter and cache use a single canonical value. */
   const toFolderId = (id: FileSystemFolderId | null): FileSystemFolderId =>
     id ?? "root";
 
@@ -100,7 +98,6 @@ export async function create(): Promise<FileSystemService> {
     try {
       await adapter.renameItem(id, name);
 
-      // Invalidate cache for parent directory
       const segments = id.split("/");
       segments.pop();
       const parentId = segments.join("/") || "root";
@@ -123,7 +120,6 @@ export async function create(): Promise<FileSystemService> {
     try {
       await adapter.moveItem(id, parentId);
 
-      // Invalidate cache for both old and new parent directories
       const segments = id.split("/");
       segments.pop();
       const oldParentId = segments.join("/") || "root";
@@ -150,6 +146,25 @@ export async function create(): Promise<FileSystemService> {
     systemCache.delete(parentId);
   }
 
+  function writeFileSync(id: FileSystemFileId, content: Uint8Array): void {
+    const segments = id.split("/");
+    const fileName = segments.pop()!;
+    const parentId = segments.join("/") || "root";
+
+    adapter.writeSync(id, content);
+
+    const blob = new Blob([Uint8Array.from(content)]);
+    adapter.updateMetadataAsync(parentId, fileName, blob);
+
+    systemCache.delete(parentId);
+  }
+
+  async function getSyncHandle(
+    fileId: FileSystemFileId
+  ): Promise<FileSystemSyncAccessHandle> {
+    return adapter.getSyncHandle(fileId);
+  }
+
   return {
     getItems,
     createFile,
@@ -157,5 +172,7 @@ export async function create(): Promise<FileSystemService> {
     renameItem,
     moveItem,
     deleteItem,
+    writeFileSync,
+    getSyncHandle,
   };
 }
