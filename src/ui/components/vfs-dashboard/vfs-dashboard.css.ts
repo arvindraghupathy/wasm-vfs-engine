@@ -27,7 +27,7 @@ export const styles = css`
   .actions {
     display: flex;
     gap: 10px;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
   }
 
   button {
@@ -45,15 +45,69 @@ export const styles = css`
     cursor: not-allowed;
   }
 
+  .actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 1.5rem;
+  }
+  .action-card {
+    border: 1px solid #e6e6e6;
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .action-card h4 {
+    margin: 0;
+  }
+  input,
+  textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 8px;
+    font-family: monospace;
+    font-size: 0.9rem;
+  }
+  textarea {
+    min-height: 64px;
+    resize: vertical;
+  }
+
   .file-list {
     border-top: 1px solid #eee;
     padding-top: 1rem;
   }
+  .item-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  h4 {
+    margin: 0 0 8px 0;
+    font-size: 0.95rem;
+  }
+  .empty {
+    color: #777;
+    margin: 0;
+  }
   ul {
     padding-left: 20px;
+    margin: 0;
   }
   li {
     margin-bottom: 4px;
     font-family: monospace;
+  }
+  @media (max-width: 640px) {
+    .actions-grid {
+      grid-template-columns: 1fr;
+    }
+    .item-columns {
+      grid-template-columns: 1fr;
+    }
   }
 `;

@@ -14,8 +14,14 @@ export class VfsDashboard extends LitElement {
   static styles = styles;
 
   @state() private status = "Offline";
-  @state() private files: FileSystemItem[] = [];
+  @state() private items: FileSystemItem[] = [];
   @state() private isProcessing = false;
+  @state() private createFilePath = "notes.txt";
+  @state() private createFileContent = "";
+  @state() private deleteFilePath = "";
+  @state() private createFolderParent = "root";
+  @state() private createFolderName = "";
+  @state() private deleteFolderPath = "";
 
   private worker!: Worker;
 
@@ -39,7 +45,7 @@ export class VfsDashboard extends LitElement {
           typeof WorkerMessage.SUCCESS
         >;
         this.isProcessing = false;
-        console.log(`File created via WASM: ${path}`);
+        console.log(`Operation succeeded: ${path}`);
         this._refreshFileList();
       }
 
@@ -47,7 +53,7 @@ export class VfsDashboard extends LitElement {
         const { items } = payload as WorkerResponseType<
           typeof WorkerMessage.ITEMS
         >;
-        this.files = items;
+        this.items = items;
       }
 
       if (type === WorkerMessage.ERROR) {
@@ -61,10 +67,18 @@ export class VfsDashboard extends LitElement {
 
       if (type === WorkerMessage.SHUTDOWN) {
         this.status = "Offline";
-        this.files = [];
+        this.items = [];
         this.isProcessing = false;
       }
     };
+  }
+
+  private get folders() {
+    return this.items.filter((item) => item.type === "directory");
+  }
+
+  private get files() {
+    return this.items.filter((item) => item.type === "file");
   }
 
   render() {
@@ -82,34 +96,118 @@ export class VfsDashboard extends LitElement {
           <button @click=${this._boot} ?disabled=${this.status !== "Offline"}>
             Initialize Engine
           </button>
+        </div>
 
-          <button
-            @click=${this._testWrite}
-            ?disabled=${this.status === "Offline" || this.isProcessing}
-          >
-            ${this.isProcessing ? "Writing..." : "Run WASM Write Test"}
-          </button>
+        <div class="actions-grid">
+          <section class="action-card">
+            <h4>Create File</h4>
+            <input
+              .value=${this.createFilePath}
+              @input=${(e: Event) =>
+                (this.createFilePath = (e.target as HTMLInputElement).value)}
+              placeholder="file path e.g. logs/app.txt"
+            />
+            <textarea
+              .value=${this.createFileContent}
+              @input=${(e: Event) =>
+                (this.createFileContent = (e.target as HTMLTextAreaElement).value)}
+              placeholder="file content"
+            ></textarea>
+            <button
+              @click=${this._createFile}
+              ?disabled=${this.status === "Offline" || this.isProcessing}
+            >
+              Create File
+            </button>
+          </section>
+
+          <section class="action-card">
+            <h4>Delete File</h4>
+            <input
+              .value=${this.deleteFilePath}
+              @input=${(e: Event) =>
+                (this.deleteFilePath = (e.target as HTMLInputElement).value)}
+              placeholder="file path to delete"
+            />
+            <button
+              @click=${this._deleteFile}
+              ?disabled=${this.status === "Offline" || this.isProcessing}
+            >
+              Delete File
+            </button>
+          </section>
+
+          <section class="action-card">
+            <h4>Create Folder</h4>
+            <input
+              .value=${this.createFolderParent}
+              @input=${(e: Event) =>
+                (this.createFolderParent = (e.target as HTMLInputElement).value)}
+              placeholder="parent path (root)"
+            />
+            <input
+              .value=${this.createFolderName}
+              @input=${(e: Event) =>
+                (this.createFolderName = (e.target as HTMLInputElement).value)}
+              placeholder="folder name"
+            />
+            <button
+              @click=${this._createFolder}
+              ?disabled=${this.status === "Offline" || this.isProcessing}
+            >
+              Create Folder
+            </button>
+          </section>
+
+          <section class="action-card">
+            <h4>Delete Folder</h4>
+            <input
+              .value=${this.deleteFolderPath}
+              @input=${(e: Event) =>
+                (this.deleteFolderPath = (e.target as HTMLInputElement).value)}
+              placeholder="folder path to delete"
+            />
+            <button
+              @click=${this._deleteFolder}
+              ?disabled=${this.status === "Offline" || this.isProcessing}
+            >
+              Delete Folder
+            </button>
+          </section>
         </div>
 
         <div class="file-list">
-          <h3>Files in OPFS</h3>
-          ${this.files.length === 0
-            ? html`<p>No files found.</p>`
-            : html`
-                <ul>
-                  ${this.files.map(
-                    (f) =>
-                      html`<li>
-                        ${f.name}
-                        ${f.type === "file"
-                          ? html`<small
-                              >(${f.mediaHash.substring(0, 8)}...)</small
-                            >`
-                          : html`<small>(folder)</small>`}
-                      </li>`
-                  )}
-                </ul>
-              `}
+          <h3>Items in OPFS</h3>
+          <div class="item-columns">
+            <section>
+              <h4>Folders (${this.folders.length})</h4>
+              ${this.folders.length === 0
+                ? html`<p class="empty">No folders.</p>`
+                : html`
+                    <ul>
+                      ${this.folders.map(
+                        (folder) => html`<li>[DIR] ${folder.name}</li>`
+                      )}
+                    </ul>
+                  `}
+            </section>
+            <section>
+              <h4>Files (${this.files.length})</h4>
+              ${this.files.length === 0
+                ? html`<p class="empty">No files.</p>`
+                : html`
+                    <ul>
+                      ${this.files.map(
+                        (file) =>
+                          html`<li>
+                            [FILE] ${file.name}
+                            <small>(${file.mediaHash.substring(0, 8)}...)</small>
+                          </li>`
+                      )}
+                    </ul>
+                  `}
+            </section>
+          </div>
         </div>
       </div>
     `;
@@ -120,16 +218,53 @@ export class VfsDashboard extends LitElement {
     this.worker.postMessage({ type: WorkerMessage.BOOT });
   }
 
-  private _testWrite() {
-    this.isProcessing = true;
-    const fileName = `wasm_log_${Date.now()}.txt`;
+  private _createFile() {
+    const path = this.createFilePath.trim();
+    if (!path) return;
 
+    this.isProcessing = true;
     this.worker.postMessage({
       type: WorkerMessage.WRITE_FILE,
       payload: {
-        path: fileName,
-        content: `Generated at ${new Date().toISOString()} via WASM engine.`,
+        path,
+        content: this.createFileContent,
       },
+    });
+  }
+
+  private _deleteFile() {
+    const path = this.deleteFilePath.trim();
+    if (!path) return;
+
+    this.isProcessing = true;
+    this.worker.postMessage({
+      type: WorkerMessage.DELETE_FILE,
+      payload: { path },
+    });
+  }
+
+  private _createFolder() {
+    const folderName = this.createFolderName.trim();
+    if (!folderName) return;
+
+    this.isProcessing = true;
+    this.worker.postMessage({
+      type: WorkerMessage.CREATE_FOLDER,
+      payload: {
+        parentPath: this.createFolderParent.trim() || "root",
+        folderName,
+      },
+    });
+  }
+
+  private _deleteFolder() {
+    const path = this.deleteFolderPath.trim();
+    if (!path) return;
+
+    this.isProcessing = true;
+    this.worker.postMessage({
+      type: WorkerMessage.DELETE_FOLDER,
+      payload: { path },
     });
   }
 

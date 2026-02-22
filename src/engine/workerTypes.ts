@@ -3,6 +3,9 @@ import type { FileSystemItem } from "./fileSystemService/FileSystemService";
 export const WorkerMessage = {
   BOOT: "BOOT",
   WRITE_FILE: "WRITE_FILE",
+  CREATE_FOLDER: "CREATE_FOLDER",
+  DELETE_FILE: "DELETE_FILE",
+  DELETE_FOLDER: "DELETE_FOLDER",
   GET_ITEMS: "GET_ITEMS",
   ITEMS: "ITEMS",
   ERROR: "ERROR",
@@ -25,6 +28,9 @@ export type WorkerResponseTypeMap = {
 export type WorkerRequestTypeMap = {
   [WorkerMessage.BOOT]: undefined;
   [WorkerMessage.WRITE_FILE]: { path: string; content: string };
+  [WorkerMessage.CREATE_FOLDER]: { parentPath?: string; folderName: string };
+  [WorkerMessage.DELETE_FILE]: { path: string };
+  [WorkerMessage.DELETE_FOLDER]: { path: string };
   [WorkerMessage.GET_ITEMS]: { folderId: string };
   [WorkerMessage.SHUTDOWN]: undefined;
 };

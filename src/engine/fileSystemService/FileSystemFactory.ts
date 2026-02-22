@@ -1,11 +1,8 @@
 import type {
   FileSystemDirectory,
-  FileSystemError,
-  FileSystemFile,
-  FileSystemFileId,
   FileSystemFolderId,
+  FileSystemFileId,
   FileSystemItem,
-  FileSystemItemId,
   FileSystemService,
 } from "./FileSystemService.ts";
 import { OPFSAdapter } from "./OPFSAdapter";
@@ -43,109 +40,6 @@ export async function create(): Promise<FileSystemService> {
     return items;
   }
 
-  /**
-   * Create a new file
-   */
-  async function createFile(
-    parentId: FileSystemFolderId | null,
-    file: Omit<FileSystemFile, "id">,
-    media: Blob
-  ): Promise<FileSystemFileId | FileSystemError> {
-    const folderId = toFolderId(parentId);
-    try {
-      const fileId = await adapter.createFile(folderId, file, media);
-
-      systemCache.delete(folderId);
-
-      return fileId;
-    } catch (error) {
-      return {
-        type: "error",
-        code: "invalid name",
-      };
-    }
-  }
-
-  /**
-   * Create a new folder
-   */
-  async function createFolder(
-    parentId: FileSystemFolderId | null,
-    folder: Omit<FileSystemDirectory, "id">
-  ): Promise<FileSystemFolderId | FileSystemError> {
-    const folderId = toFolderId(parentId);
-    try {
-      const newFolderId = await adapter.createDirectory(folderId, folder);
-
-      systemCache.delete(folderId);
-
-      return newFolderId;
-    } catch (error) {
-      return {
-        type: "error",
-        code: "invalid name",
-      };
-    }
-  }
-
-  /**
-   * Rename an item
-   */
-  async function renameItem(
-    id: FileSystemItemId,
-    name: string
-  ): Promise<void | FileSystemError> {
-    try {
-      await adapter.renameItem(id, name);
-
-      const segments = id.split("/");
-      segments.pop();
-      const parentId = segments.join("/") || "root";
-      systemCache.delete(parentId);
-    } catch (error) {
-      return {
-        type: "error",
-        code: "invalid name",
-      };
-    }
-  }
-
-  /**
-   * Move an item to a different directory
-   */
-  async function moveItem(
-    id: FileSystemItemId,
-    parentId: FileSystemFolderId
-  ): Promise<void | FileSystemError> {
-    try {
-      await adapter.moveItem(id, parentId);
-
-      const segments = id.split("/");
-      segments.pop();
-      const oldParentId = segments.join("/") || "root";
-      systemCache.delete(oldParentId);
-      systemCache.delete(parentId);
-    } catch (error) {
-      return {
-        type: "error",
-        code: "invalid name",
-      };
-    }
-  }
-
-  /**
-   * Delete an item
-   */
-  async function deleteItem(id: FileSystemItemId): Promise<void> {
-    await adapter.deleteItem(id);
-
-    // Invalidate cache for parent directory
-    const segments = id.split("/");
-    segments.pop();
-    const parentId = segments.join("/") || "root";
-    systemCache.delete(parentId);
-  }
-
   function writeFileSync(id: FileSystemFileId, content: Uint8Array): void {
     const segments = id.split("/");
     const fileName = segments.pop()!;
@@ -165,18 +59,68 @@ export async function create(): Promise<FileSystemService> {
     return adapter.getSyncHandle(fileId);
   }
 
+  function createFolderSync(
+    parentId: FileSystemFolderId | null,
+    name: string
+  ): void {
+    const folderId = toFolderId(parentId);
+    const folder: Omit<FileSystemDirectory, "id"> = {
+      type: "directory",
+      name,
+    };
+
+    void adapter.createDirectory(folderId, folder).then(
+      () => {
+        systemCache.delete(folderId);
+      },
+      (error) => {
+        console.error(
+          `[OPFS] Failed to create folder '${name}' in '${folderId}':`,
+          error
+        );
+      }
+    );
+  }
+
+  function readFileSync(id: FileSystemFileId): Uint8Array {
+    return adapter.readSync(id);
+  }
+
+  function deleteFileSync(id: FileSystemFileId): void {
+    const segments = id.split("/");
+    segments.pop();
+    const parentId = segments.join("/") || "root";
+
+    // Fire-and-forget to keep WASM call path synchronous.
+    void adapter.deleteFileAsync(id).catch((error) => {
+      console.error(`[OPFS] Failed to delete file '${id}':`, error);
+    });
+    systemCache.delete(parentId);
+  }
+
+  function deleteFolderSync(id: FileSystemFolderId): void {
+    const segments = id.split("/");
+    segments.pop();
+    const parentId = segments.join("/") || "root";
+
+    // Fire-and-forget to keep WASM call path synchronous.
+    void adapter.deleteFolderAsync(id).catch((error) => {
+      console.error(`[OPFS] Failed to delete folder '${id}':`, error);
+    });
+    systemCache.delete(parentId);
+  }
+
   async function shutdown(): Promise<void> {
     await adapter.shutdown();
   }
 
   return {
     getItems,
-    createFile,
-    createFolder,
-    renameItem,
-    moveItem,
-    deleteItem,
     writeFileSync,
+    createFolderSync,
+    readFileSync,
+    deleteFileSync,
+    deleteFolderSync,
     getSyncHandle,
     shutdown,
   };

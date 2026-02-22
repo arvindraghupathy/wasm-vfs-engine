@@ -46,6 +46,18 @@ class WorkerMessageHandler {
         this.handleWriteFile(
           payload as WorkerRequestType<typeof WorkerMessage.WRITE_FILE>
         ),
+      [WorkerMessage.CREATE_FOLDER]: async (payload) =>
+        this.handleCreateFolder(
+          payload as WorkerRequestType<typeof WorkerMessage.CREATE_FOLDER>
+        ),
+      [WorkerMessage.DELETE_FILE]: async (payload) =>
+        this.handleDeleteFile(
+          payload as WorkerRequestType<typeof WorkerMessage.DELETE_FILE>
+        ),
+      [WorkerMessage.DELETE_FOLDER]: async (payload) =>
+        this.handleDeleteFolder(
+          payload as WorkerRequestType<typeof WorkerMessage.DELETE_FOLDER>
+        ),
       [WorkerMessage.GET_ITEMS]: async (payload) =>
         this.handleGetItems(
           payload as WorkerRequestType<typeof WorkerMessage.GET_ITEMS>
@@ -93,6 +105,57 @@ class WorkerMessageHandler {
       type: WorkerMessage.ITEMS,
       payload: { folderId, items },
     });
+  }
+
+  async handleCreateFolder(
+    payload: WorkerRequestType<typeof WorkerMessage.CREATE_FOLDER>
+  ) {
+    if (!this.service || !this.wasmModule) {
+      throw new Error("Engine not initialized");
+    }
+
+    const parentPath = payload?.parentPath ?? "root";
+    const folderName = payload?.folderName?.trim();
+    if (!folderName) {
+      throw new Error("Missing folder name");
+    }
+
+    this.wasmModule.VFSManager.createFolder(parentPath, folderName);
+    const createdPath =
+      parentPath === "root" ? folderName : `${parentPath}/${folderName}`;
+    self.postMessage({ type: WorkerMessage.SUCCESS, payload: { path: createdPath } });
+  }
+
+  async handleDeleteFile(
+    payload: WorkerRequestType<typeof WorkerMessage.DELETE_FILE>
+  ) {
+    if (!this.service || !this.wasmModule) {
+      throw new Error("Engine not initialized");
+    }
+
+    const path = payload?.path?.trim();
+    if (!path) {
+      throw new Error("Missing file path");
+    }
+
+    this.wasmModule.VFSManager.deleteFile(path);
+    self.postMessage({ type: WorkerMessage.SUCCESS, payload: { path } });
+  }
+
+  async handleDeleteFolder(
+    payload: WorkerRequestType<typeof WorkerMessage.DELETE_FOLDER>
+  ) {
+    if (!this.service || !this.wasmModule) {
+      throw new Error("Engine not initialized");
+    }
+
+    const path = payload?.path?.trim();
+    if (!path) {
+      throw new Error("Missing folder path");
+    }
+
+    this.wasmModule.VFSManager.deleteFolder(path);
+    self.postMessage({ type: WorkerMessage.SUCCESS, payload: { path } });
   }
 
   async handleShutdown() {

@@ -29,7 +29,7 @@ type ItemMetadata = FileMetadata | DirectoryMetadata;
  */
 export class OPFSAdapter {
   private root: FileSystemDirectoryHandle | null = null;
-  private syncHandles = new Map<string, any>();
+  private syncHandles = new Map<string, FileSystemSyncAccessHandle>();
 
   /**
    * Initialize OPFS root directory
@@ -246,6 +246,8 @@ export class OPFSAdapter {
    * Delete an item (file or directory)
    */
   async deleteItem(itemId: FileSystemItemId): Promise<void> {
+    this.closeSyncHandle(itemId);
+
     const segments = itemId.split("/");
     const itemName = segments.pop()!;
     const parentId = segments.join("/") || "root";
@@ -335,7 +337,7 @@ export class OPFSAdapter {
   }
 
   async getSyncHandle(fileId: string): Promise<FileSystemSyncAccessHandle> {
-    if (this.syncHandles.has(fileId)) return this.syncHandles.get(fileId);
+    if (this.syncHandles.has(fileId)) return this.syncHandles.get(fileId)!;
 
     const segments = fileId.split("/");
     const fileName = segments.pop()!;
@@ -347,6 +349,17 @@ export class OPFSAdapter {
     const accessHandle = await fileHandle.createSyncAccessHandle();
     this.syncHandles.set(fileId, accessHandle);
     return accessHandle;
+  }
+
+  private closeSyncHandle(fileId: string): void {
+    const handle = this.syncHandles.get(fileId);
+    if (!handle) return;
+
+    try {
+      handle.close();
+    } finally {
+      this.syncHandles.delete(fileId);
+    }
   }
 
   writeSync(fileId: string, data: Uint8Array): number {
@@ -367,11 +380,18 @@ export class OPFSAdapter {
     return offset;
   }
 
+  async deleteFileAsync(fileId: string): Promise<void> {
+    await this.deleteItem(fileId);
+  }
+
+  async deleteFolderAsync(folderId: string): Promise<void> {
+    await this.deleteItem(folderId);
+  }
+
   async shutdown(): Promise<void> {
-    for (const handle of this.syncHandles.values()) {
-      handle.close();
+    for (const fileId of this.syncHandles.keys()) {
+      this.closeSyncHandle(fileId);
     }
-    this.syncHandles.clear();
     this.root = null;
   }
 
