@@ -1,4 +1,4 @@
-# WASM VFS Engine (WIP)
+# WASM VFS Engine 
 
 Browser VFS prototype with a WASM memory-first model and OPFS persistence.
 
@@ -65,11 +65,6 @@ Implemented:
 - Dirty tracking and debounced flush to OPFS
 - Root item listing for UI demo
 
-Known gaps:
-
-- `move` is not implemented in OPFS adapter
-- Directory rename is not implemented in OPFS adapter
-- UI is demo-only and not the core host-binding surface
 
 ## Prerequisites
 
